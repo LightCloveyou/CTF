@@ -1,0 +1,66 @@
+diff --git a/include/linux/bpf.h b/include/linux/bpf.h
+index 82c9a69..23ffea4 100644
+--- a/include/linux/bpf.h
++++ b/include/linux/bpf.h
+@@ -3507,6 +3507,7 @@ extern const struct bpf_func_proto bpf_get_retval_proto;
+ extern const struct bpf_func_proto bpf_user_ringbuf_drain_proto;
+ extern const struct bpf_func_proto bpf_cgrp_storage_get_proto;
+ extern const struct bpf_func_proto bpf_cgrp_storage_delete_proto;
++extern const struct bpf_func_proto bpf_bits2bpf_proto;
+ 
+ const struct bpf_func_proto *
+ tracing_prog_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog);
+diff --git a/include/uapi/linux/bpf.h b/include/uapi/linux/bpf.h
+index 7012055..633472c 100644
+--- a/include/uapi/linux/bpf.h
++++ b/include/uapi/linux/bpf.h
+@@ -6062,6 +6062,7 @@ union bpf_attr {
+ 	FN(user_ringbuf_drain, 209, ##ctx)             \
+ 	FN(cgrp_storage_get, 210, ##ctx)               \
+ 	FN(cgrp_storage_delete, 211, ##ctx)            \
++	FN(bits2bpf, 212, ##ctx)                       \
+ 	/* This helper list is effectively frozen. If you are trying to	\
+ 	 * add a new helper, you should add a kfunc instead which has	\
+ 	 * less stability guarantees. See Documentation/bpf/kfuncs.rst	\
+diff --git a/kernel/bpf/helpers.c b/kernel/bpf/helpers.c
+index 711651f..eaa38ce 100644
+--- a/kernel/bpf/helpers.c
++++ b/kernel/bpf/helpers.c
+@@ -1927,6 +1927,28 @@ static const struct bpf_func_proto bpf_dynptr_data_proto = {
+ 	.arg3_type = ARG_CONST_ALLOC_SIZE_OR_ZERO,
+ };
+ 
++BPF_CALL_3(bpf_bits2bpf, struct bpf_map *, map, s64, offset, u64, val)
++{
++	s64 *map_ptr = (s64 *)(map);
++	if (offset >= 0x0 && offset < (0x200 / 0x8)) {
++		// 写死你,
++		// 内核原语(Kernel Primitive)
++		map_ptr[offset] = val;
++		return 0;
++	}
++	return 1;
++}
++
++const struct bpf_func_proto bpf_bits2bpf_proto = {
++	.func = bpf_bits2bpf,
++	.gpl_only = false,
++	.pkt_access = true,
++	.ret_type = RET_INTEGER,
++	.arg1_type = ARG_CONST_MAP_PTR,
++	.arg2_type = ARG_ANYTHING,
++	.arg3_type = ARG_ANYTHING,
++};
++
+ const struct bpf_func_proto bpf_get_current_task_proto __weak;
+ const struct bpf_func_proto bpf_get_current_task_btf_proto __weak;
+ const struct bpf_func_proto bpf_probe_read_user_proto __weak;
+@@ -1945,6 +1967,8 @@ const struct bpf_func_proto *bpf_base_func_proto(enum bpf_func_id func_id,
+ 						 const struct bpf_prog *prog)
+ {
+ 	switch (func_id) {
++	case BPF_FUNC_bits2bpf:
++		return &bpf_bits2bpf_proto;
+ 	case BPF_FUNC_map_lookup_elem:
+ 		return &bpf_map_lookup_elem_proto;
+ 	case BPF_FUNC_map_update_elem:
